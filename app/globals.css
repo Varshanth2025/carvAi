@@ -119,3 +119,136 @@
     @apply bg-background text-foreground;
   }
 }
+/* .grid-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+} */
+/* body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 20% 30%, #76a9fa 0%, transparent 60%),
+    radial-gradient(circle at 80% 70%, #b7bcc4 0%, transparent 60%);
+  filter: blur(120px);
+  z-index: -1;
+} */
+
+/* body {
+  background: linear-gradient(
+    -45deg,
+    #f4fdff,
+    #111112,
+    rgb(63, 64, 64),
+    #040504
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 12s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+} */
+
+.fancy-background {
+  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #0a0a0a;
+  background-image: radial-gradient(2px 2px at 20px 20px, #098de0, transparent),
+    radial-gradient(1px 1px at 50px 80px, #ffffff55, transparent),
+    radial-gradient(1px 1px at 90px 40px, #2e24e922, transparent);
+  background-repeat: repeat;
+  background-size: 100px 100px;
+  z-index: -1;
+  overflow: hidden;
+}
+
+/* .fancy-background::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at center,
+    rgba(0, 0, 0, 0) 40%,
+    rgba(0, 0, 0, 0.95) 100%
+  );
+} */
+
+@layer utilities {
+  .gradient {
+    @apply bg-gradient-to-b from-gray-400 via-gray-200 to-gray-600;
+  }
+
+  .gradient-title {
+    @apply bg-gradient-to-b from-gray-400 via-gray-200 to-gray-600 font-extrabold tracking-tighter text-transparent bg-clip-text pb-2 pr-2;
+  }
+}
+
+.hero-image-wrapper {
+  perspective: 1000px;
+}
+.hero-image {
+  transform: rotateX(15deg) scale(1);
+  transition: transform 0.5s ease-out;
+  will-change: transform;
+}
+.hero-image.scrolled {
+  transform: rotateX(0deg) scale(1) translateY(40px);
+}
+
+/* --- Animated gradient button style --- */
+.gradient-button {
+  position: relative;
+  width: fit-content;
+  height: 2.8rem;
+  border-radius: 50px;
+  background: linear-gradient(
+    to right,
+    #656565,
+    #7f42a7,
+    #6600c5,
+    #5300a0,
+    #757575,
+    #656565
+  );
+  background-size: 200%;
+  animation: animationGradient 2.5s linear infinite;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+}
+
+.gradient-button-inner {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50px;
+  background-color: black;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  font-weight: 500;
+  transition: 0.3s ease;
+}
+
+@keyframes animationGradient {
+  to {
+    background-position: 200%;
+  }
+}
