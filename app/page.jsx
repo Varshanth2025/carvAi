@@ -1,17 +1,17 @@
-import HeroSection from "@/components/hero";
+import HeroSection from "../components/hero";
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/ui/accordion";
-import { Button } from "@/components/ui/button";
+} from "../components/ui/accordion";
+import { Button } from "../components/ui/button";
 
-import { Card, CardContent } from "@/components/ui/card";
-import { faqs } from "@/data/faqs";
-import { features } from "@/data/features";
-import { howItWorks } from "@/data/howItWorks";
-import { tools } from "@/data/tools";
+import { Card, CardContent } from "../components/ui/card";
+import { faqs } from "../data/faqs";
+import { features } from "../data/features";
+import { howItWorks } from "../data/howItWorks";
+import { tools } from "../data/tools";
 import { ArrowRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
