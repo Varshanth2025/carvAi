@@ -2,7 +2,7 @@
 import { success } from "zod";
 import { db } from "../lib/prisma";
 import { auth } from "@clerk/nextjs/server";
-
+import { generateAIInsights } from "./dashboard";
 export async function updateUser(data) {
   const { userId } = await auth();
   if (!userId) throw new Error("unauthorized");
@@ -14,32 +14,30 @@ export async function updateUser(data) {
   if (!user) throw new Error("User not found");
 
   try {
+    // move AI generation outside transaction
+    let insights;
+    let industryInsight = await db.industryInsight.findUnique({
+      where: { industry: data.industry },
+    });
+
+    if (!industryInsight) {
+      insights = await generateAIInsights(data.industry);
+    }
+
     const result = await db.$transaction(
       async (tx) => {
-        let industryInsight = await tx.industryInsight.findUnique({
-          where: {
-            industry: data.industry,
-          },
-        });
-        if (!industryInsight) {
+        if (!industryInsight && insights) {
           industryInsight = await tx.industryInsight.create({
             data: {
               industry: data.industry,
-              salaryRanges: [],
-              growthRate: 0,
-              demandlevel: "MEDIUM",
-              topSkills: [],
-              marketOutlook: "NEUTRAL",
-              keyTrends: [],
-              recommendedSkills: [],
+              ...insights,
               nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             },
           });
         }
+
         const updatedUser = await tx.user.update({
-          where: {
-            id: user.id,
-          },
+          where: { id: user.id },
           data: {
             industry: data.industry,
             experience: data.experience,
@@ -47,12 +45,10 @@ export async function updateUser(data) {
             skills: data.skills,
           },
         });
+
         return { updatedUser, industryInsight };
       },
-
-      {
-        timeout: 10000,
-      }
+      { timeout: 10000 }
     );
     return { success: true, ...result };
   } catch (error) {

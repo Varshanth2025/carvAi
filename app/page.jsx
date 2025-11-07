@@ -1,4 +1,5 @@
 import HeroSection from "../components/hero";
+import "./globals.css";
 import {
   Accordion,
   AccordionContent,

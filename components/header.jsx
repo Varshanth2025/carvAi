@@ -23,7 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { checkUser } from "../lib/inngest/checkUser";
+import { checkUser } from "../lib/checkUser";
 
 const Header = async () => {
   await checkUser();
