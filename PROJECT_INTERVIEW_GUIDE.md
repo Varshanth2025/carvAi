@@ -1,234 +1,211 @@
 # CarvAi — Infosys SP/DSE Project Interview Guide
 
 > **Repository:** `Varshanth2025/carvAi`  
-> **Inspected code:** Next.js App Router, Clerk, Prisma/PostgreSQL, Google Gemini, Inngest, and server actions.  
-> This guide is based on repository code. README-only claims are marked for verification.
+> Based on inspected code in `actions/`, `app/`, `lib/`, `middleware.js`, `prisma/schema.prisma`, and `package.json`. README-only claims are marked for verification.
 
-## 1. Project purpose and architecture
+## 1. Purpose and architecture
 
-### Purpose
-CarvAi is an AI-assisted career platform. The implemented code supports user onboarding, industry insights, AI-generated cover letters, resume storage/improvement, and AI-generated technical interview quizzes with saved assessment history.
+CarvAi is an AI-assisted career platform. The inspected implementation supports authenticated user onboarding, cached industry insights, AI-generated cover letters, resume storage/improvement, and AI-generated technical quizzes with saved assessment history.
 
-### Architecture
+Architecture:
 
-- **Frontend/routing:** Next.js App Router under `app/`; server-rendered pages call server actions.
-- **Server-side application logic:** Functions in `actions/` use the `"use server"` directive.
-- **Authentication:** Clerk, accessed through `auth()` and `currentUser()`.
-- **Database:** PostgreSQL accessed through Prisma (`lib/prisma.js`, `prisma/schema.prisma`).
-- **AI:** Google Gemini `gemini-2.5-flash` for insights, cover letters, resume improvements, quizzes, and improvement tips.
-- **Background jobs:** Inngest refreshes stored industry insights on a weekly cron schedule.
-- **UI:** React, Tailwind CSS, Radix/shadcn-style components, React Hook Form, Recharts, Markdown editor, and `html2pdf.js` dependencies.
+- **UI/routing:** Next.js App Router under `app/`.
+- **Business logic:** Server actions in `actions/*.js` using `"use server"`.
+- **Authentication:** Clerk through `auth()` and `currentUser()`.
+- **Database:** PostgreSQL through Prisma (`lib/prisma.js`, `prisma/schema.prisma`).
+- **AI:** Google Gemini `gemini-2.5-flash`.
+- **Background work:** Inngest weekly industry-insight refresh.
+- **UI libraries:** React, Tailwind, Radix/shadcn-style components, React Hook Form, Recharts, Markdown/PDF-related dependencies.
 
-### End-to-end execution flow
+### End-to-end flow
 
-1. A request enters the Next.js application. `middleware.js` uses Clerk and protects `/dashboard`, `/resume`, `/interview`, `/ai-cover-letter`, and `/onboarding` routes.
-2. `checkUser()` in `lib/checkUser.js` reads the Clerk user and creates a local Prisma `User` record if one does not exist, using `clerkUserId` as the external identity.
-3. The dashboard page (`app/(main)/dashboard/page.jsx`) calls `getUserOnboardingStatus()`. If no industry is stored, it redirects to `/onboarding`.
-4. `updateUser()` in `actions/user.js` validates authentication, loads the local user, optionally generates industry insights with `generateAIInsights()`, and updates the user plus cached industry data in a Prisma transaction.
-5. `getIndustryInsights()` loads the user’s related `IndustryInsight`; if missing, it calls Gemini, parses the JSON response, stores it, and sets `nextUpdate` seven days ahead.
-6. On the resume page, `getResume()` loads the user’s single resume. `saveResume()` uses Prisma `upsert`, so one user has one resume record. `improveWithAI()` sends a section to Gemini and returns improved text.
-7. On the cover-letter feature, `generateCoverLetter()` combines job information with the user profile, asks Gemini for Markdown, saves the result in `Coverletter`, and returns it.
-8. On the interview feature, `generateQuiz()` loads the user’s industry and skills, asks Gemini for ten multiple-choice questions, strips optional Markdown code fences, parses JSON, and returns the questions.
-9. `saveQuizResult()` compares each submitted answer with `correctAnswer`, builds per-question results, optionally asks Gemini for an improvement tip based on wrong answers, and persists an `Assessment`.
-10. `getAssessments()` loads the authenticated user’s historical assessments. `app/(main)/interview/page.jsx` passes them to `StatsCards`, `PerformanceChart`, and `QuizList`.
-11. `lib/inngest/functions.js` runs `generateIndustryInsights` every Sunday at midnight. It fetches industries, generates fresh Gemini JSON for each, and updates `lastUpdated` and `nextUpdate`.
+1. `middleware.js` uses Clerk and protects `/dashboard`, `/resume`, `/interview`, `/ai-cover-letter`, and `/onboarding`.
+2. `checkUser()` in `lib/checkUser.js` maps the Clerk user to a local Prisma `User`, creating it if absent.
+3. `app/(main)/dashboard/page.jsx` calls `getUserOnboardingStatus()` and redirects to `/onboarding` when `User.industry` is missing.
+4. `updateUser()` in `actions/user.js` loads the authenticated local user, checks for an `IndustryInsight`, generates one with Gemini if missing, and updates the profile plus insight inside a Prisma transaction. Gemini generation is deliberately outside the transaction.
+5. `getIndustryInsights()` loads the user’s related insight; if absent, it calls `generateAIInsights()`, parses the JSON response, creates the row, and sets `nextUpdate` seven days ahead.
+6. `app/(main)/resume/page.jsx` calls `getResume()`. `saveResume()` uses Prisma `upsert`, while `improveWithAI()` sends a resume section to Gemini.
+7. `generateCoverLetter()` combines job details with the user’s industry, experience, skills, and bio, asks Gemini for Markdown, and saves the result in `Coverletter`.
+8. `generateQuiz()` uses user industry and skills to request ten four-option questions. `saveQuizResult()` compares submitted answers, generates optional feedback for wrong answers, and stores the assessment.
+9. `app/(main)/interview/page.jsx` calls `getAssessments()` and passes results to `StatsCards`, `PerformanceChart`, and `QuizList`.
+10. `lib/inngest/functions.js` runs `generateIndustryInsights` every Sunday at midnight, regenerating and updating insights for stored industries through `app/api/inngest/route.js`.
 
-## 2. Important files, functions, and talking points
+## 2. Important files and functions
 
-| File | Important code | Interview talking point |
+| File | Important code | Talking point |
 |---|---|---|
-| `middleware.js` | `isProtectedRoute`, Clerk middleware | Route-level authentication and redirect behavior. |
-| `lib/checkUser.js` | `checkUser()` | Synchronizes Clerk identity with the local Prisma user table. |
-| `lib/prisma.js` | Singleton `PrismaClient` pattern | Avoids creating too many clients during development hot reloads. |
-| `prisma/schema.prisma` | `User`, `Assessment`, `Resume`, `Coverletter`, `IndustryInsight` | Relational design, unique constraints, foreign keys, JSON fields, arrays, and indexes. |
-| `actions/user.js` | `updateUser()`, `getUserOnboardingStatus()` | Onboarding, industry-cache creation, authentication, and transaction usage. |
-| `actions/dashboard.js` | `generateAIInsights()`, `getIndustryInsights()` | Prompt-constrained JSON generation and seven-day insight caching. |
-| `actions/interview.js` | `generateQuiz()`, `saveQuizResult()`, `getAssessments()` | AI quiz generation, scoring algorithm, persistence, and personalized feedback. |
-| `actions/resume.js` | `saveResume()`, `getResume()`, `improveWithAI()` | Single-row upsert and AI-assisted content improvement. |
-| `actions/cover-letter.js` | `generateCoverLetter()`, CRUD functions | Profile-aware prompt construction and ownership filtering. |
-| `lib/inngest/functions.js` | `generateIndustryInsights` | Scheduled background refresh rather than doing all work during a page request. |
-| `app/(main)/dashboard/page.jsx` | onboarding check and `getIndustryInsights()` | Server-rendered protected page and redirect flow. |
-| `app/(main)/interview/page.jsx` | `getAssessments()` | Server-side data loading for performance and simpler client components. |
-| `app/page.jsx` | `Home()` | Static landing-page composition from data arrays and reusable UI components. |
+| `middleware.js` | `isProtectedRoute`, Clerk middleware | Route-level auth and redirects. |
+| `lib/checkUser.js` | `checkUser()` | Clerk-to-local-user synchronization. |
+| `lib/prisma.js` | Prisma singleton | Avoids duplicate clients during development hot reloads. |
+| `prisma/schema.prisma` | `User`, `IndustryInsight`, `Resume`, `Coverletter`, `Assessment` | Relations, uniqueness, indexes, JSON, arrays, enums. |
+| `actions/user.js` | `updateUser()`, `getUserOnboardingStatus()` | Onboarding and transactional profile/insight update. |
+| `actions/dashboard.js` | `generateAIInsights()`, `getIndustryInsights()` | Structured AI output and caching. |
+| `actions/interview.js` | `generateQuiz()`, `saveQuizResult()`, `getAssessments()` | Quiz generation, scoring, feedback, history. |
+| `actions/resume.js` | `saveResume()`, `getResume()`, `improveWithAI()` | One-resume-per-user upsert and AI improvement. |
+| `actions/cover-letter.js` | `generateCoverLetter()` and CRUD | Profile-aware prompt and ownership filtering. |
+| `lib/inngest/functions.js` | `generateIndustryInsights` | Scheduled background refresh. |
+| `app/(main)/dashboard/page.jsx` | onboarding check | Server-rendered protected page. |
+| `app/(main)/interview/page.jsx` | `getAssessments()` | Server-side data loading. |
 
-**Personal contribution warning:** The repository code cannot prove which features you personally implemented. Verify your exact contribution and be ready to explain the files you changed.
+**Verify your personal contribution separately; repository code cannot prove which parts you implemented.**
 
-## 3. Technologies and key design decisions
+## 3. Technologies and design decisions
 
-- **Next.js App Router:** Server-rendered pages and server actions keep database and AI calls on the server. This avoids exposing API keys to the browser.
-- **Clerk:** Delegates authentication and OAuth/session management. The code maps the Clerk ID to a local `User` record for application data.
-- **Prisma + PostgreSQL:** Provides typed database access and relational integrity. The schema uses unique fields for `clerkUserId`, email, and one resume per user.
-- **Server actions:** `"use server"` functions provide a direct server-side boundary for mutations and reads without building separate REST endpoints for each feature.
-- **Gemini:** A single model is reused for structured industry JSON, quizzes, cover letters, resume improvements, and feedback.
-- **Inngest:** Moves periodic industry refresh work into a scheduled background function. `step.run` and `step.ai.wrap` make job stages explicit.
-- **Zod dependency:** Listed in `package.json`; verify actual runtime usage in the current branch before claiming comprehensive input validation. The inspected action files do not show Zod schemas at their boundaries.
-- **Recharts:** Used by the interview dashboard components for performance visualization; the exact chart calculations should be verified in those components before discussing metrics.
-- **Markdown and PDF dependencies:** README and dependencies indicate Markdown editing/rendering and PDF generation support. Verify the exact implementation in resume components before claiming a specific export flow.
+- **Next.js App Router:** Server-rendered pages and server actions keep database access and API keys on the server.
+- **Clerk:** Handles authentication; local Prisma users store application-specific fields.
+- **Prisma/PostgreSQL:** Relational persistence with foreign keys, unique constraints, indexes, and typed queries.
+- **Server actions:** Direct server-side mutations/queries without separate REST endpoints for every feature.
+- **Gemini:** Reused for industry JSON, quizzes, cover letters, resume improvements, and feedback.
+- **Inngest:** Separates scheduled/expensive insight regeneration from user page requests.
+- **React/Tailwind/Radix:** Componentized responsive UI.
+- **Recharts:** Used by interview dashboard components; verify exact calculations before discussing metrics.
 
-### Important design choices
+Key decisions:
 
-1. **External-to-local user mapping:** Clerk remains the identity provider, while Prisma stores domain data keyed by the local `User.id`.
-2. **Cached industry insights:** Insights are stored by unique `industry`, allowing multiple users in the same industry to reuse one generated record.
-3. **Seven-day refresh period:** `nextUpdate` is set using `Date.now() + 7 * 24 * 60 * 60 * 1000`; the scheduled Inngest job updates existing insight rows weekly.
-4. **Resume upsert:** `Resume.userId` is unique, so `saveResume()` can update or create without requiring separate existence logic.
-5. **AI structured output:** Prompts request JSON-only output, then the code removes code fences and calls `JSON.parse()`.
-6. **Optional feedback generation:** `saveQuizResult()` only calls Gemini for improvement feedback when there are wrong answers, reducing unnecessary AI calls.
+1. `clerkUserId` identifies the external user while local `User.id` is used by domain relations.
+2. `IndustryInsight.industry` is unique, allowing shared cached insights for users in the same industry.
+3. Resume `userId` is unique, enabling `upsert`.
+4. Prompts request JSON-only responses; code removes code fences and calls `JSON.parse()`.
+5. Improvement feedback is generated only when wrong quiz answers exist, reducing unnecessary AI calls.
 
-## 4. Database, APIs, algorithms, error handling, and debugging
+## 4. Database, APIs, algorithms, error handling, debugging
 
-### Database model
+### Database
 
-- `User`: Clerk identity, profile, industry, skills, and relations.
-- `IndustryInsight`: One cached record per unique industry, with JSON salary ranges, growth rate, demand level, skill arrays, trends, and refresh timestamps.
-- `Resume`: One-to-one with `User`, storing long-form content, optional ATS score, and feedback.
-- `Coverletter`: Many cover letters per user, including company, job title, job description, and generated content.
-- `Assessment`: Quiz score, JSON question results, category, and optional improvement tip.
+- `User`: Clerk identity, profile, industry, skills.
+- `IndustryInsight`: unique industry, salary JSON, growth rate, demand enum, skills, trends, refresh dates.
+- `Resume`: one-to-one with user; long text content and optional ATS fields.
+- `Coverletter`: many per user with job metadata and generated content.
+- `Assessment`: quiz score, JSON question results, category, improvement tip.
 
-Foreign keys connect child records to `User`; `Assessment.userId` and `Coverletter.userId` are indexed. `User.industry` references the unique `IndustryInsight.industry` field.
+`Assessment.userId` and `Coverletter.userId` are indexed. `User.industry` relates to unique `IndustryInsight.industry`.
 
-### Server actions / API surface
+### Server action API
 
-The inspected code primarily uses server actions rather than conventional REST handlers:
-
-- User: `updateUser`, `getUserOnboardingStatus`
-- Dashboard: `generateAIInsights`, `getIndustryInsights`
-- Interview: `generateQuiz`, `saveQuizResult`, `getAssessments`
-- Resume: `saveResume`, `getResume`, `improveWithAI`
-- Cover letters: `generateCoverLetter`, `getCoverLetters`, `getCoverLetter`, `deleteCoverLetter`
-- Background route: `app/api/inngest/route.js` exposes the Inngest functions through GET/POST/PUT handlers.
+- User: `updateUser`, `getUserOnboardingStatus`.
+- Dashboard: `generateAIInsights`, `getIndustryInsights`.
+- Interview: `generateQuiz`, `saveQuizResult`, `getAssessments`.
+- Resume: `saveResume`, `getResume`, `improveWithAI`.
+- Cover letters: `generateCoverLetter`, `getCoverLetters`, `getCoverLetter`, `deleteCoverLetter`.
+- Inngest: `app/api/inngest/route.js` exposes the scheduled function.
 
 ### Algorithms
 
-- **Quiz scoring:** `questions.map((q, index) => ...)` compares `q.correctAnswer` with `answers[index]`; wrong answers are filtered and used to build an improvement prompt. The score itself is accepted as an argument, so verify where it is calculated in the client.
-- **Industry cache lookup:** `getIndustryInsights()` first checks the user’s relation; if absent, it generates and inserts one industry record.
-- **Pagination/order:** The inspected action files do not show pagination for assessments or cover letters; `getAssessments()` orders by `createdAt: "asc"`.
-- **Structured AI parsing:** Responses are cleaned with `/```(?:json)?\n?/g`, then parsed with `JSON.parse()`.
-- **Prompt personalization:** User industry, experience, skills, bio, job details, and wrong quiz questions are interpolated into prompts.
+- Quiz results are built with `questions.map`; correctness is `q.correctAnswer === answers[index]`.
+- Wrong results are filtered and serialized into the improvement prompt.
+- AI JSON is cleaned with `/```(?:json)?\n?/g` and parsed.
+- Insights use a unique industry cache and a seven-day `nextUpdate` timestamp.
+- `getAssessments()` orders history ascending by `createdAt`.
 
 ### Error handling
 
-The actions consistently:
+Actions check authentication, reject missing users, log failures, and throw generic errors. `updateUser()` uses a transaction with a ten-second timeout. Quiz feedback failure is non-fatal: the assessment can still be saved with `improvementTip = null`.
 
-- Reject unauthenticated calls with `Error("Unauthorized")` or `Error("unauthorized")`.
-- Reject missing local users with `Error("User not found")`.
-- Log server-side failures using `console.error` and throw a user-facing generic error.
-- Continue quiz-result persistence if improvement-tip generation fails; the tip remains `null`.
-- Use a Prisma transaction in `updateUser()` with a ten-second timeout.
-
-Limitations in current error handling:
-
-- Gemini JSON parsing failures are not fully normalized into domain-specific errors.
-- Some read operations such as `getResume()` and `getCoverLetters()` do not wrap database failures in custom errors.
-- The UI error/loading behavior should be verified in the relevant components.
+Weaknesses include direct `JSON.parse()` without runtime schema validation, generic errors, and some reads without custom error handling.
 
 ### Debugging checklist
 
-1. Check Clerk authentication first: `auth()`/`currentUser()` must return a user ID.
-2. Confirm a matching local `User` exists by `clerkUserId`.
+1. Confirm Clerk `auth()` returns a user ID.
+2. Confirm a local `User` exists for that Clerk ID.
 3. Check `DATABASE_URL`, Prisma generation, migrations, and relation errors.
-4. For Gemini failures, log the raw response before cleaning/parsing and verify the model/key.
-5. For JSON parse errors, inspect whether Gemini returned Markdown, extra text, missing fields, or invalid enum values.
-6. For onboarding problems, inspect `User.industry`, `getUserOnboardingStatus()`, and the redirect in the dashboard page.
-7. For stale insights, inspect `IndustryInsight.lastUpdated` and `nextUpdate`, then verify Inngest delivery and the Sunday cron.
-8. For quiz problems, compare question ordering with `answers[index]` and verify the client’s score calculation.
-9. For authorization problems, confirm every query uses the authenticated user’s local `user.id`.
+4. Log raw Gemini output before cleaning/parsing when structured generation fails.
+5. Verify `User.industry`, onboarding redirect, and insight relation.
+6. Inspect `lastUpdated`/`nextUpdate` and Inngest delivery for stale insights.
+7. For quiz issues, compare question order with `answers[index]` and verify where `score` is computed.
+8. Confirm every query filters data using the authenticated local `user.id`.
 
-## 5. Fifteen likely Infosys SP/DSE interview questions
+## 5. Fifteen likely Infosys SP/DSE questions
 
-1. **Explain CarvAi in one minute.**
-   - **Sample answer:** CarvAi is a Next.js career assistant that stores user profiles, resumes, cover letters, interview assessments, and cached industry insights in PostgreSQL through Prisma. Clerk handles identity, Gemini generates career content, and Inngest periodically refreshes industry data. Server actions keep database and AI operations on the server.
-   - **Follow-up:** Which part is synchronous and which part is asynchronous?
+1. **Explain CarvAi.**
+   - **Answer:** It is a Next.js career assistant using Clerk, Prisma/PostgreSQL, Gemini, and Inngest. It stores profiles, resumes, cover letters, assessments, and cached industry insights. Server actions perform authenticated reads/mutations, while Inngest refreshes industry data weekly.
+   - **Follow-up:** Which operations are synchronous versus background?
 
-2. **Why use Clerk and still store users in Prisma?**
-   - **Sample answer:** Clerk handles authentication and identity, but application features need domain data such as industry, experience, bio, skills, resumes, and assessments. `checkUser()` maps the Clerk ID to a local `User` row, so domain tables can use normal relational foreign keys.
-   - **Follow-up:** What happens if a Clerk user exists but the local user does not?
+2. **Why store users locally if Clerk already authenticates them?**
+   - **Answer:** Clerk provides identity, but the application needs industry, experience, skills, resumes, assessments, and cover letters. `checkUser()` maps Clerk’s ID to a local `User` row.
+   - **Follow-up:** What if the local row is missing?
 
-3. **How does the onboarding flow work?**
-   - **Sample answer:** `getUserOnboardingStatus()` checks whether the authenticated local user has an industry. The dashboard page redirects to `/onboarding` when it is missing. `updateUser()` saves profile fields and creates or reuses the industry insight inside a Prisma transaction.
-   - **Follow-up:** Why generate AI insights outside the transaction?
+3. **Explain onboarding.**
+   - **Answer:** `getUserOnboardingStatus()` checks `User.industry`; the dashboard redirects to `/onboarding` if absent. `updateUser()` saves profile fields and creates/reuses industry insight data.
+   - **Follow-up:** Why is AI generation outside the transaction?
 
-4. **Why is AI generation outside the transaction in `updateUser()`?**
-   - **Sample answer:** Gemini is an external, potentially slow operation. Holding a database transaction open while waiting for an external API increases lock duration and timeout risk. The code generates insights first, then performs the database writes in a transaction.
-   - **Follow-up:** What consistency issue can this create?
+4. **How is industry data cached?**
+   - **Answer:** `IndustryInsight.industry` is unique. The first request generates and stores the insight; later requests reuse the relation. Inngest refreshes all stored industries weekly.
+   - **Follow-up:** How would you handle two first requests concurrently?
 
-5. **How are industry insights cached?**
-   - **Sample answer:** `IndustryInsight.industry` is unique. `getIndustryInsights()` returns the existing related record; if absent, it calls `generateAIInsights()` and creates one with `nextUpdate` seven days later. The Inngest cron refreshes existing industries weekly.
-   - **Follow-up:** How would you avoid two users generating the same new industry simultaneously?
-
-6. **How do you make Gemini return structured data?**
-   - **Sample answer:** The prompt explicitly specifies a JSON schema and requests JSON only. The response is cleaned with a regular expression to remove optional Markdown code fences, then parsed with `JSON.parse()`. In production I would additionally validate the parsed object with Zod before persistence.
+5. **How do you get structured Gemini output?**
+   - **Answer:** The prompt specifies a JSON structure. Code removes Markdown fences and calls `JSON.parse()`. I would add Zod validation for required fields, enums, and numeric ranges.
    - **Follow-up:** What if the model returns valid JSON with missing fields?
 
-7. **Explain quiz generation and scoring.**
-   - **Sample answer:** `generateQuiz()` loads the user’s industry and skills, asks Gemini for ten four-option questions, parses the JSON, and returns the questions. `saveQuizResult()` maps questions to submitted answers, compares each answer with `correctAnswer`, filters wrong answers, optionally generates a short improvement tip, and stores the assessment as JSON.
-   - **Follow-up:** Where is the score calculated?
+6. **Explain quiz scoring.**
+   - **Answer:** `saveQuizResult()` maps each question to the corresponding submitted answer, compares it to `correctAnswer`, filters wrong answers, optionally generates an improvement tip, and stores the result as JSON.
+   - **Follow-up:** Where is the supplied score calculated?
 
-8. **Why store assessment questions as JSON?**
-   - **Sample answer:** Quiz questions have a nested and variable structure: question text, options, correct answer, user answer, correctness, and explanation. A JSON column keeps the complete historical snapshot with the assessment. The trade-off is weaker relational querying and validation compared with normalized question tables.
-   - **Follow-up:** When would you normalize this model?
+7. **Why store quiz questions as JSON?**
+   - **Answer:** Each result has nested, variable fields such as options, explanations, user answers, and correctness. JSON preserves a historical snapshot simply, though normalized tables would be better for complex analytics.
+   - **Follow-up:** When would you normalize it?
 
-9. **How does resume persistence work?**
-   - **Sample answer:** `Resume.userId` is unique, so `saveResume()` uses Prisma `upsert`: update the existing row or create it if absent. `getResume()` retrieves the row and passes its content to `ResumeBuilder` as `initialContent`.
-   - **Follow-up:** Why is upsert safer than separate find-then-create logic?
+8. **How does resume saving work?**
+   - **Answer:** `Resume.userId` is unique and `saveResume()` uses `upsert`, updating the existing resume or creating one. This avoids a race-prone find-then-create sequence.
+   - **Follow-up:** How would you add version history?
 
-10. **How is the cover letter personalized?**
-    - **Sample answer:** `generateCoverLetter()` combines job title, company, job description, and the user’s industry, experience, skills, and bio into a prompt. Gemini returns Markdown, which is stored in `Coverletter` along with the job metadata and local user ID.
-    - **Follow-up:** What prompt-injection or privacy risks exist?
+9. **How is a cover letter personalized?**
+   - **Answer:** `generateCoverLetter()` includes job title/company/description and the user’s industry, experience, skills, and bio in the Gemini prompt, then saves the generated Markdown with user ownership.
+   - **Follow-up:** What privacy and prompt-injection risks exist?
 
-11. **Why use server actions instead of client-side API calls?**
-    - **Sample answer:** These operations require database access, Clerk secrets, and the Gemini API key. Server actions keep those credentials and operations on the server while allowing page components to call domain-specific functions directly. They also reduce repetitive REST endpoint code.
-    - **Follow-up:** When would you prefer REST or tRPC?
+10. **Why use server actions?**
+    - **Answer:** Database access, Clerk secrets, and Gemini keys remain server-side. Server actions also provide a feature-oriented API without many manual REST routes.
+    - **Follow-up:** When would REST or tRPC be preferable?
 
-12. **What is the purpose of the Inngest function?**
-    - **Sample answer:** `generateIndustryInsights` is a scheduled function exposed by `app/api/inngest/route.js`. It fetches all stored industries, generates fresh Gemini data for each, and updates refresh timestamps. This prevents every dashboard request from generating expensive market data.
-    - **Follow-up:** How would you handle one industry failing while others should continue?
+11. **What does the Inngest job do?**
+    - **Answer:** `generateIndustryInsights` runs on cron, fetches all industries, generates fresh Gemini results, parses them, and updates each row’s data and timestamps.
+    - **Follow-up:** How should one failed industry affect the others?
 
-13. **How is authorization enforced in the actions?**
-    - **Sample answer:** Each action calls Clerk `auth()` and resolves the local user by `clerkUserId`. Reads and mutations then use the local `user.id`; for example, cover letters and assessments filter by that ID, and resume access is restricted by unique `userId` lookup.
-    - **Follow-up:** Is middleware alone sufficient for authorization?
+12. **How is authorization enforced?**
+    - **Answer:** Every action calls Clerk authentication, resolves the local user, and filters child data by `user.id`. This protects data at the server/database query boundary, not just in the UI.
+    - **Follow-up:** Is middleware alone enough?
 
-14. **Identify a concrete limitation in the current code.**
-    - **Sample answer:** Gemini output is parsed with `JSON.parse()` but is not visibly validated against a runtime schema before being saved. A malformed response or wrong enum such as an unexpected demand level could fail or corrupt data. I would add Zod validation and retry/fallback handling.
-    - **Follow-up:** What other issue would you prioritize?
+13. **What is a concrete limitation?**
+    - **Answer:** AI JSON is parsed without schema validation. A malformed response or invalid enum may fail or save bad data. I would add Zod validation, bounded retries, and a fallback error path.
+    - **Follow-up:** What would you fix first?
+
+14. **How would you debug a Gemini failure?**
+    - **Answer:** Verify API key/model, log a redacted raw response, check code-fence cleaning, validate parsed fields, and distinguish provider failure from database persistence failure.
+    - **Follow-up:** What should never be logged?
 
 15. **How would you improve production reliability?**
-    - **Sample answer:** Add Zod validation for all action inputs and Gemini outputs, centralize error types, add rate limits and usage controls for AI calls, make insight refresh idempotent, add indexes and pagination, redact sensitive prompt data from logs, test ownership checks, and add observability for Clerk, Prisma, Gemini, and Inngest failures.
-    - **Follow-up:** Which improvement gives the highest immediate safety benefit?
+    - **Answer:** Add Zod validation, rate limits and AI quotas, structured logging/correlation IDs, idempotent insight refresh, per-industry failure isolation, pagination, stronger error types, and tests for auth, ownership, scoring, transactions, malformed AI output, and cron jobs.
+    - **Follow-up:** Which has the highest immediate safety impact?
 
-## 6. Bugs, limitations, and improvements
+## 6. Bugs, limitations, improvements
 
-### Directly visible risks
+### Visible risks
 
-- **README/code mismatch:** The README lists extensive testing tools and scripts, but the inspected `package.json` contains only `dev`, `build`, `start`, `lint`, and `postinstall`; verify tests before claiming they exist.
-- **No visible runtime schema validation in actions:** Although Zod is a dependency, inspected actions accept plain objects and parse Gemini JSON directly.
-- **AI output trust:** `generateAIInsights()` and `generateQuiz()` call `JSON.parse()` after removing code fences, but do not validate required fields, array lengths, numeric ranges, or enum values.
-- **Prompt/data leakage risk:** User bio, skills, job descriptions, and wrong answers are sent to Gemini. The application should document data handling and avoid logging sensitive prompts or responses.
-- **Potential duplicate insight generation:** Two simultaneous onboarding requests for a new industry can both observe no row and attempt to create one. The unique constraint protects the database but the action does not visibly handle the resulting conflict.
-- **Stale-cache semantics:** `getIndustryInsights()` checks whether the relation exists but does not visibly compare `nextUpdate` with the current time. Refresh responsibility is delegated to the Inngest cron.
-- **Inngest loop failure behavior:** `generateIndustryInsights` processes industries sequentially. One Gemini/JSON/database failure may interrupt later industries unless Inngest retries the function; verify runtime behavior and add per-industry error isolation if required.
-- **No visible AI rate limiting:** Repeated requests can trigger repeated Gemini calls and cost. Add quotas, throttling, or caching for generated content.
-- **Error messages are generic:** Generic errors are useful for users but make diagnosis harder without correlation IDs and structured logging.
-- **`checkUser()` error behavior:** It logs an error and returns `undefined` rather than throwing a typed failure, which can make downstream authentication/profile bugs harder to diagnose.
-- **Potential assumptions in onboarding:** `updateUser()` expects `data.industry`, and `getIndustryInsights()` passes `user.industry` to Gemini. Verify UI validation prevents null or invalid industries.
-- **README metrics are not code evidence:** Landing-page text in `app/page.jsx` displays values such as `50+`, `1000+`, and `95%`; verify whether these are measured metrics or marketing copy before mentioning them.
+- README lists many testing commands, but `package.json` only defines `dev`, `build`, `start`, `lint`, and `postinstall`; verify tests before claiming them.
+- Zod is a dependency, but inspected actions do not visibly validate input or Gemini output with schemas.
+- `JSON.parse()` trusts model output; missing fields, wrong enums, or wrong array lengths are possible.
+- AI receives user profile, job descriptions, and answer data; privacy, retention, and prompt-injection controls should be reviewed.
+- Concurrent first requests for a new industry can both attempt creation; the unique constraint may produce a conflict that is not explicitly handled.
+- `getIndustryInsights()` checks for an existing relation but does not visibly compare `nextUpdate` to current time; freshness depends on the Inngest cron.
+- The weekly Inngest loop processes industries sequentially; one failure may interrupt later updates unless retries/isolation are confirmed.
+- There is no visible AI rate limiting or cost control.
+- `checkUser()` logs an error and returns `undefined` instead of throwing a typed failure.
+- `updateUser()` imports `success` from Zod but does not use it.
+- Landing-page values such as `50+`, `1000+`, and `95%` in `app/page.jsx` appear to be marketing copy; do not present them as measured metrics without verification.
 
 ### Recommended improvements
 
-1. Add Zod schemas for action inputs and Gemini response objects.
-2. Add retries with bounded backoff and fallback behavior for Gemini failures.
-3. Add rate limiting, quotas, and caching for expensive AI operations.
-4. Add `nextUpdate` freshness checks and a safe single-flight/upsert strategy for new industries.
-5. Process each industry refresh independently and record failures without stopping all updates.
-6. Add structured logging, request IDs, AI latency/cost tracking, and safe error boundaries.
-7. Add pagination for cover letters and assessments and indexes for common filters.
-8. Review prompt privacy, sanitize user-provided text, and avoid logging sensitive content.
-9. Add automated tests for auth ownership, onboarding redirects, Prisma transactions, malformed Gemini JSON, quiz scoring, and scheduled jobs.
-10. Verify and align README scripts/features with the actual `package.json` and current implementation.
+1. Add Zod schemas for every action input and Gemini response.
+2. Add retries, fallback handling, quotas, and rate limiting for AI calls.
+3. Make insight creation/refresh idempotent and isolate failures per industry.
+4. Add structured logging, correlation IDs, and safe redaction of prompts/responses.
+5. Add pagination for assessments and cover letters.
+6. Review the industry relation and freshness logic for nullable/missing industries.
+7. Add tests for authorization, ownership, onboarding, quiz scoring, malformed JSON, transactions, and Inngest jobs.
+8. Align README claims/scripts with the actual implementation.
 
-## Interview cautions / verify before the interview
+## Verify before the interview
 
-- Verify your exact personal contribution; repository code cannot establish it.
-- Verify whether Gemini output validation, test suites, PDF export, ATS scoring, Clerk OAuth, and UI loading/error states are implemented in files not inspected here.
-- Do not claim real-time industry data accuracy; the code generates and caches AI output, and the README’s “real-time” wording should be treated as a product claim.
-- Confirm the current deployed environment variables, Neon database, Inngest cron configuration, and Gemini model version.
-- Distinguish code-backed facts from README marketing text, especially user counts, success rate, coverage goals, and supported feature breadth.
+- Your exact personal contribution.
+- Whether PDF export, ATS scoring, tests, OAuth providers, loading/error UI, and full onboarding validation are implemented in uninspected components.
+- Whether Neon, Vercel, Inngest cron, and production environment variables are currently configured.
+- Whether README metrics represent real measurements or static marketing content.
